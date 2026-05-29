@@ -1,0 +1,46 @@
+---
+- name: "Docker | check AIX subsystem status (lssrc)"
+  ansible.builtin.command: lssrc -s docker
+  register: aix_docker_subsys
+  changed_when: false
+  failed_when: false
+
+- name: "Docker | get version"
+  ansible.builtin.command: docker --version
+  register: aix_docker_version
+  changed_when: false
+  failed_when: false
+
+- name: "Docker | locate binary"
+  ansible.builtin.command: which docker
+  register: aix_docker_path
+  changed_when: false
+  failed_when: false
+
+- name: "Docker | query installed AIX fileset (lslpp)"
+  ansible.builtin.shell: |
+    lslpp -L 2>/dev/null | grep -i docker | head -n 1
+  args:
+    executable: /bin/sh
+  register: aix_docker_package
+  changed_when: false
+  failed_when: false
+
+- name: "Docker | append normalized record to cmdb_software_results"
+  ansible.builtin.set_fact:
+    cmdb_software_results: "{{ cmdb_software_results + [aix_docker_entry] }}"
+  vars:
+    aix_docker_binary_found: "{{ (aix_docker_path.rc | default(1)) == 0 and (aix_docker_path.stdout | default('') | trim) | length > 0 }}"
+    aix_docker_active: "{{ 'active' in (aix_docker_subsys.stdout | default('') | lower) }}"
+    aix_docker_status: >-
+      {{ 'running' if aix_docker_active
+         else ('installed' if aix_docker_binary_found
+         else 'not_installed') }}
+    aix_docker_entry:
+      hostname: "{{ inventory_hostname }}"
+      software: "Docker"
+      status: "{{ aix_docker_status | trim }}"
+      version: "{{ aix_docker_version.stdout | default('') | trim }}"
+      install_folder: "{{ aix_docker_path.stdout | default('') | trim }}"
+      package: "{{ aix_docker_package.stdout | default('') | trim }}"
+      platform: "aix"

@@ -1,4 +1,12 @@
 ---
+# Per-software collectors to run on Windows hosts.
+# Add new software by:
+#   1. creating roles/win_cmdb/tasks/software/<name>.yml
+#   2. appending its name here (or via AWX extra vars / survey).
+cmdb_win_software_modules:
+  - docker
+
 cmdb_software_results: []
-cmdb_output_file: "{{ lookup('env', 'AWX_PRIVATE_DATA_DIR') | default('/tmp', true) }}/cmdb_software_results.json"
+
 cmdb_write_json: false
+cmdb_output_dir: "{{ lookup('env', 'AWX_PRIVATE_DATA_DIR') | default('/tmp', true) }}"

@@ -1,24 +1,27 @@
 ---
-- name: Initialize CMDB software results buffer
+- name: "rhel_cmdb | initialize per-host results buffer"
   ansible.builtin.set_fact:
     cmdb_software_results: []
 
-- name: Include per-software collectors
-  ansible.builtin.include_tasks: "software/{{ item }}.yml"
+- name: "rhel_cmdb | run per-software collectors"
+  ansible.builtin.include_tasks: "software/{{ collector }}.yml"
   loop: "{{ cmdb_rhel_software_modules }}"
+  loop_control:
+    loop_var: collector
+    label: "{{ collector }}"
 
-- name: Render CMDB results JSON to AWX job workspace
+- name: "rhel_cmdb | write per-host JSON artifact (optional)"
   ansible.builtin.template:
     src: cmdb_results.json.j2
-    dest: "{{ cmdb_output_file }}"
+    dest: "{{ cmdb_output_dir }}/cmdb_{{ inventory_hostname }}.json"
     mode: "0644"
   when: cmdb_write_json | bool
   delegate_to: localhost
-  run_once: false
   changed_when: false
 
-- name: Publish CMDB software results to AWX stats
+- name: "rhel_cmdb | publish results to AWX stats (aggregate across hosts)"
   ansible.builtin.set_stats:
     data:
-      cmdb_software_results: "{{ cmdb_software_results | default([]) }}"
+      cmdb_software_results: "{{ cmdb_software_results }}"
     aggregate: true
+    per_host: false

@@ -1,77 +1,27 @@
 ---
-- name: Initialize CMDB software results buffer
+- name: "oracle_cmdb | initialize per-host results buffer"
   ansible.builtin.set_fact:
     cmdb_software_results: []
 
-- name: "Oracle | detect ORACLE_HOME from /etc/oratab"
-  ansible.builtin.shell: |
-    awk -F: '/^[^#]/ && NF >= 2 {print $2; exit}' /etc/oratab 2>/dev/null
-  args:
-    executable: /bin/sh
-  register: oracle_home_detect
-  changed_when: false
-  failed_when: false
+- name: "oracle_cmdb | run per-software collectors"
+  ansible.builtin.include_tasks: "software/{{ collector }}.yml"
+  loop: "{{ cmdb_oracle_software_modules }}"
+  loop_control:
+    loop_var: collector
+    label: "{{ collector }}"
 
-- name: "Oracle | get sqlplus version (if available)"
-  ansible.builtin.shell: |
-    set -e
-    OH="{{ oracle_home_detect.stdout | default('') | trim }}"
-    if [ -x "$OH/bin/sqlplus" ]; then
-      "$OH/bin/sqlplus" -V 2>/dev/null | head -n 1
-    elif command -v sqlplus >/dev/null 2>&1; then
-      sqlplus -V 2>/dev/null | head -n 1
-    fi
-  args:
-    executable: /bin/sh
-  register: oracle_sqlplus_version
-  changed_when: false
-  failed_when: false
-
-- name: "Oracle | check listener status (lsnrctl status)"
-  ansible.builtin.shell: |
-    OH="{{ oracle_home_detect.stdout | default('') | trim }}"
-    if [ -x "$OH/bin/lsnrctl" ]; then
-      "$OH/bin/lsnrctl" status 2>/dev/null | head -n 5
-    elif command -v lsnrctl >/dev/null 2>&1; then
-      lsnrctl status 2>/dev/null | head -n 5
-    fi
-  args:
-    executable: /bin/sh
-  register: oracle_listener
-  changed_when: false
-  failed_when: false
-
-- name: "Oracle | append normalized record to cmdb_software_results"
-  ansible.builtin.set_fact:
-    cmdb_software_results: "{{ cmdb_software_results + [oracle_entry] }}"
-  vars:
-    oracle_home_value: "{{ oracle_home_detect.stdout | default('') | trim }}"
-    oracle_installed: "{{ oracle_home_value | length > 0 or (oracle_sqlplus_version.stdout | default('') | trim) | length > 0 }}"
-    oracle_listener_up: "{{ 'STATUS of the LISTENER' in (oracle_listener.stdout | default('')) }}"
-    oracle_status: >-
-      {{ 'running' if oracle_listener_up
-         else ('installed' if oracle_installed
-         else 'not_installed') }}
-    oracle_entry:
-      hostname: "{{ inventory_hostname }}"
-      software: "Oracle Database"
-      status: "{{ oracle_status | trim }}"
-      version: "{{ oracle_sqlplus_version.stdout | default('') | trim }}"
-      install_folder: "{{ oracle_home_value }}"
-      package: ""
-      platform: "oracle"
-
-- name: Render CMDB results JSON to AWX job workspace
+- name: "oracle_cmdb | write per-host JSON artifact (optional)"
   ansible.builtin.template:
     src: cmdb_results.json.j2
-    dest: "{{ cmdb_output_file }}"
+    dest: "{{ cmdb_output_dir }}/cmdb_{{ inventory_hostname }}.json"
     mode: "0644"
   when: cmdb_write_json | bool
   delegate_to: localhost
   changed_when: false
 
-- name: Publish CMDB software results to AWX stats
+- name: "oracle_cmdb | publish results to AWX stats (aggregate across hosts)"
   ansible.builtin.set_stats:
     data:
-      cmdb_software_results: "{{ cmdb_software_results | default([]) }}"
+      cmdb_software_results: "{{ cmdb_software_results }}"
     aggregate: true
+    per_host: false
