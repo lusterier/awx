@@ -1,0 +1,51 @@
+---
+- name: "PostgreSQL | find any active postgresql-* systemd unit"
+  ansible.builtin.shell: |
+    systemctl list-units --no-legend --no-pager --state=active 'postgresql*' 2>/dev/null \
+      | awk '{print $1}' | head -n 1
+  args:
+    executable: /bin/bash
+  register: ol_pg_service
+  changed_when: false
+  failed_when: false
+
+- name: "PostgreSQL | get psql version"
+  ansible.builtin.command: psql --version
+  register: ol_pg_version
+  changed_when: false
+  failed_when: false
+
+- name: "PostgreSQL | locate psql binary"
+  ansible.builtin.command: command -v psql
+  register: ol_pg_path
+  changed_when: false
+  failed_when: false
+
+- name: "PostgreSQL | get rpm package name"
+  ansible.builtin.shell: |
+    set -o pipefail
+    rpm -qa | grep -iE '^postgresql' | head -n 1
+  args:
+    executable: /bin/bash
+  register: ol_pg_package
+  changed_when: false
+  failed_when: false
+
+- name: "PostgreSQL | append normalized record to cmdb_software_results"
+  ansible.builtin.set_fact:
+    cmdb_software_results: "{{ cmdb_software_results + [ol_pg_entry] }}"
+  vars:
+    ol_pg_binary_found: "{{ (ol_pg_path.rc | default(1)) == 0 and (ol_pg_path.stdout | default('') | trim) | length > 0 }}"
+    ol_pg_service_name: "{{ ol_pg_service.stdout | default('') | trim }}"
+    ol_pg_status: >-
+      {{ 'running' if ol_pg_service_name | length > 0
+         else ('installed' if ol_pg_binary_found
+         else 'not_installed') }}
+    ol_pg_entry:
+      hostname: "{{ inventory_hostname }}"
+      software: "PostgreSQL"
+      status: "{{ ol_pg_status | trim }}"
+      version: "{{ ol_pg_version.stdout | default('') | trim }}"
+      install_folder: "{{ ol_pg_path.stdout | default('') | trim }}"
+      package: "{{ ol_pg_package.stdout | default('') | trim }}"
+      platform: "oracle_linux"

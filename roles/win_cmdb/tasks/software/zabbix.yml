@@ -1,0 +1,59 @@
+---
+- name: "Zabbix Agent | query Windows services (Zabbix*)"
+  ansible.windows.win_shell: |
+    Get-Service -DisplayName 'Zabbix*' -ErrorAction SilentlyContinue |
+      Where-Object { $_.Status -eq 'Running' } |
+      Select-Object -First 1 -ExpandProperty Name
+  register: win_zbx_service
+  changed_when: false
+  failed_when: false
+
+- name: "Zabbix Agent | get agent version (agent2 then agentd)"
+  ansible.windows.win_shell: |
+    $cmd = Get-Command zabbix_agent2 -ErrorAction SilentlyContinue
+    if (-not $cmd) { $cmd = Get-Command zabbix_agentd -ErrorAction SilentlyContinue }
+    if ($cmd) { & $cmd.Source -V 2>$null | Select-Object -First 1 }
+  register: win_zbx_version
+  changed_when: false
+  failed_when: false
+
+- name: "Zabbix Agent | locate agent binary"
+  ansible.windows.win_shell: |
+    $cmd = Get-Command zabbix_agent2 -ErrorAction SilentlyContinue
+    if (-not $cmd) { $cmd = Get-Command zabbix_agentd -ErrorAction SilentlyContinue }
+    if ($cmd) { $cmd.Source }
+  register: win_zbx_path
+  changed_when: false
+  failed_when: false
+
+- name: "Zabbix Agent | query installed package (Uninstall registry)"
+  ansible.windows.win_shell: |
+    $paths = @(
+      'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
+      'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
+    )
+    Get-ItemProperty $paths -ErrorAction SilentlyContinue |
+      Where-Object { $_.DisplayName -match 'Zabbix' } |
+      Select-Object -First 1 -ExpandProperty DisplayName
+  register: win_zbx_package
+  changed_when: false
+  failed_when: false
+
+- name: "Zabbix Agent | append normalized record to cmdb_software_results"
+  ansible.builtin.set_fact:
+    cmdb_software_results: "{{ cmdb_software_results + [win_zbx_entry] }}"
+  vars:
+    win_zbx_service_active: "{{ (win_zbx_service.stdout | default('') | trim) | length > 0 }}"
+    win_zbx_binary_found: "{{ (win_zbx_path.stdout | default('') | trim) | length > 0 }}"
+    win_zbx_status: >-
+      {{ 'running' if win_zbx_service_active
+         else ('installed' if win_zbx_binary_found
+         else 'not_installed') }}
+    win_zbx_entry:
+      hostname: "{{ inventory_hostname }}"
+      software: "Zabbix Agent"
+      status: "{{ win_zbx_status | trim }}"
+      version: "{{ win_zbx_version.stdout | default('') | trim }}"
+      install_folder: "{{ win_zbx_path.stdout | default('') | trim }}"
+      package: "{{ win_zbx_package.stdout | default('') | trim }}"
+      platform: "windows"

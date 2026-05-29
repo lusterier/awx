@@ -5,6 +5,8 @@
 #   2. appending its name here (or via AWX extra vars / survey).
 cmdb_rhel_software_modules:
   - docker
+  - postgresql
+  - zabbix
 
 # Per-host results buffer (reset in tasks/main.yml).
 cmdb_software_results: []

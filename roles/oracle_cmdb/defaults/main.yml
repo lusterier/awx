@@ -7,6 +7,8 @@
 #   2. appending its name here (or via AWX extra vars / survey).
 cmdb_oracle_software_modules:
   - docker
+  - postgresql
+  - zabbix
 
 cmdb_software_results: []
 

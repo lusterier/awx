@@ -1,0 +1,61 @@
+---
+- name: "Zabbix Agent | find any active zabbix-agent* systemd unit"
+  ansible.builtin.shell: |
+    systemctl list-units --no-legend --no-pager --state=active 'zabbix-agent*' 2>/dev/null \
+      | awk '{print $1}' | head -n 1
+  args:
+    executable: /bin/bash
+  register: ol_zbx_service
+  changed_when: false
+  failed_when: false
+
+- name: "Zabbix Agent | get agent version (agent2 then agentd)"
+  ansible.builtin.shell: |
+    if command -v zabbix_agent2 >/dev/null 2>&1; then
+      zabbix_agent2 -V 2>/dev/null | head -n 1
+    elif command -v zabbix_agentd >/dev/null 2>&1; then
+      zabbix_agentd -V 2>/dev/null | head -n 1
+    fi
+  args:
+    executable: /bin/bash
+  register: ol_zbx_version
+  changed_when: false
+  failed_when: false
+
+- name: "Zabbix Agent | locate agent binary"
+  ansible.builtin.shell: |
+    command -v zabbix_agent2 || command -v zabbix_agentd
+  args:
+    executable: /bin/bash
+  register: ol_zbx_path
+  changed_when: false
+  failed_when: false
+
+- name: "Zabbix Agent | get rpm package name"
+  ansible.builtin.shell: |
+    set -o pipefail
+    rpm -qa | grep -iE '^zabbix-agent' | head -n 1
+  args:
+    executable: /bin/bash
+  register: ol_zbx_package
+  changed_when: false
+  failed_when: false
+
+- name: "Zabbix Agent | append normalized record to cmdb_software_results"
+  ansible.builtin.set_fact:
+    cmdb_software_results: "{{ cmdb_software_results + [ol_zbx_entry] }}"
+  vars:
+    ol_zbx_binary_found: "{{ (ol_zbx_path.rc | default(1)) == 0 and (ol_zbx_path.stdout | default('') | trim) | length > 0 }}"
+    ol_zbx_service_name: "{{ ol_zbx_service.stdout | default('') | trim }}"
+    ol_zbx_status: >-
+      {{ 'running' if ol_zbx_service_name | length > 0
+         else ('installed' if ol_zbx_binary_found
+         else 'not_installed') }}
+    ol_zbx_entry:
+      hostname: "{{ inventory_hostname }}"
+      software: "Zabbix Agent"
+      status: "{{ ol_zbx_status | trim }}"
+      version: "{{ ol_zbx_version.stdout | default('') | trim }}"
+      install_folder: "{{ ol_zbx_path.stdout | default('') | trim }}"
+      package: "{{ ol_zbx_package.stdout | default('') | trim }}"
+      platform: "oracle_linux"
