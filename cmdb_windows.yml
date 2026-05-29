@@ -1,0 +1,7 @@
+---
+- name: Collect Windows CMDB software facts
+  hosts: windows
+  gather_facts: true
+
+  roles:
+    - win_cmdb

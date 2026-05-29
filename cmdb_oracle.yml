@@ -1,0 +1,8 @@
+---
+- name: Collect Oracle CMDB software facts
+  hosts: oracle
+  gather_facts: true
+  become: false
+
+  roles:
+    - oracle_cmdb

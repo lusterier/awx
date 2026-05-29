@@ -1,0 +1,7 @@
+---
+- name: Collect AIX CMDB software facts
+  hosts: aix
+  gather_facts: true
+
+  roles:
+    - aix_cmdb

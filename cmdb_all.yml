@@ -1,0 +1,5 @@
+---
+- import_playbook: cmdb_rhel.yml
+- import_playbook: cmdb_windows.yml
+- import_playbook: cmdb_aix.yml
+- import_playbook: cmdb_oracle.yml

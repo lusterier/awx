@@ -1,0 +1,7 @@
+---
+cmdb_software_results: []
+cmdb_output_file: "{{ lookup('env', 'AWX_PRIVATE_DATA_DIR') | default('/tmp', true) }}/cmdb_software_results.json"
+cmdb_write_json: false
+
+cmdb_rhel_software_modules:
+  - docker

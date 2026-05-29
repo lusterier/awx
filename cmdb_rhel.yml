@@ -1,0 +1,8 @@
+---
+- name: Collect RHEL CMDB software facts
+  hosts: rhel
+  gather_facts: true
+  become: false
+
+  roles:
+    - rhel_cmdb

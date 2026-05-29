@@ -1,0 +1,6 @@
+---
+collections:
+  - name: ansible.builtin
+  - name: ansible.windows
+  - name: community.general
+  - name: community.windows

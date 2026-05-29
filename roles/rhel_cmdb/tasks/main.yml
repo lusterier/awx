@@ -1,0 +1,24 @@
+---
+- name: Initialize CMDB software results buffer
+  ansible.builtin.set_fact:
+    cmdb_software_results: []
+
+- name: Include per-software collectors
+  ansible.builtin.include_tasks: "software/{{ item }}.yml"
+  loop: "{{ cmdb_rhel_software_modules }}"
+
+- name: Render CMDB results JSON to AWX job workspace
+  ansible.builtin.template:
+    src: cmdb_results.json.j2
+    dest: "{{ cmdb_output_file }}"
+    mode: "0644"
+  when: cmdb_write_json | bool
+  delegate_to: localhost
+  run_once: false
+  changed_when: false
+
+- name: Publish CMDB software results to AWX stats
+  ansible.builtin.set_stats:
+    data:
+      cmdb_software_results: "{{ cmdb_software_results | default([]) }}"
+    aggregate: true
