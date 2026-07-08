@@ -1,0 +1,71 @@
+---
+# Ansible Task: PostgreSQL Detection (RHEL)
+# Purpose: Detect PostgreSQL on RHEL/CentOS
+# OS: RedHat, CentOS, Fedora, Oracle Linux
+
+- name: "Check PostgreSQL via rpm"
+  shell: |
+    rpm -qa 2>/dev/null | grep -iE "postgres" | sort
+  register: postgresql_rpm
+  changed_when: false
+  failed_when: false
+
+- name: "Check PostgreSQL installation directory"
+  shell: |
+    rpm -ql postgresql14-server 2>/dev/null | grep -E "^/var/lib/pgsql|^/usr/pgsql" | head -1 || \
+    rpm -ql postgresql13-server 2>/dev/null | grep -E "^/var/lib/pgsql|^/usr/pgsql" | head -1 || \
+    rpm -ql postgresql12-server 2>/dev/null | grep -E "^/var/lib/pgsql|^/usr/pgsql" | head -1 || \
+    echo "Not found"
+  register: postgresql_install_dir
+  changed_when: false
+  failed_when: false
+
+- name: "Check PostgreSQL processes"
+  shell: |
+    ps aux | grep -iE "postgres" | grep -v grep || echo "No PostgreSQL process found"
+  register: postgresql_process
+  changed_when: false
+  failed_when: false
+
+- name: "Check PostgreSQL running status"
+  shell: |
+    systemctl is-active postgresql-14 2>/dev/null || \
+    systemctl is-active postgresql-13 2>/dev/null || \
+    systemctl is-active postgresql-12 2>/dev/null || \
+    systemctl is-active postgresql 2>/dev/null || \
+    echo "Not running"
+  register: postgresql_running
+  changed_when: false
+  failed_when: false
+
+- name: "Check PostgreSQL systemd service"
+  shell: |
+    systemctl list-units --type=service --all 2>/dev/null | grep -iE "postgres" || echo "No PostgreSQL service found"
+  register: postgresql_systemd
+  changed_when: false
+  failed_when: false
+
+- name: "Check PostgreSQL version"
+  shell: |
+    psql --version 2>/dev/null || echo "Not found"
+  register: postgresql_version
+  changed_when: false
+  failed_when: false
+
+- name: "Set PostgreSQL found flag"
+  set_fact:
+    postgresql_found: "{{ (postgresql_rpm.stdout | length > 0) or (postgresql_process.stdout | length > 0) or (postgresql_systemd.stdout | length > 0) }}"
+    postgresql_is_running: "{{ postgresql_running.stdout != 'Not running' }}"
+
+- name: "Display PostgreSQL results"
+  debug:
+    msg: |
+      ================================================
+      PostgreSQL Discovery for {{ inventory_hostname }}
+      ================================================
+      Installed: {{ postgresql_found }}
+      Installation Directory: {{ postgresql_install_dir.stdout }}
+      Running: {{ postgresql_is_running }}
+      Version: {{ postgresql_version.stdout }}
+      RPM Packages: {{ postgresql_rpm.stdout_lines[:3] }}
+      ================================================
