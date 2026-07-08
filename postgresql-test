@@ -1,71 +1,101 @@
 ---
 # Ansible Task: PostgreSQL Detection (RHEL)
-# Purpose: Detect PostgreSQL on RHEL/CentOS
-# OS: RedHat, CentOS, Fedora, Oracle Linux
+# Purpose: Detect PostgreSQL on RHEL/CentOS/Fedora/Oracle Linux using Ansible facts
 
-- name: "Check PostgreSQL via rpm"
-  shell: |
-    rpm -qa 2>/dev/null | grep -iE "postgres" | sort
-  register: postgresql_rpm
+- name: "Gather installed package facts"
+  ansible.builtin.package_facts:
+    manager: auto
+
+- name: "Gather service facts"
+  ansible.builtin.service_facts:
+
+- name: "Build PostgreSQL package/service facts"
+  ansible.builtin.set_fact:
+    postgresql_packages: >-
+      {{
+        ansible_facts.packages
+        | dict2items
+        | selectattr('key', 'match', '(?i).*postgres.*')
+        | sort(attribute='key')
+        | list
+      }}
+    postgresql_services: >-
+      {{
+        ansible_facts.services
+        | dict2items
+        | selectattr('key', 'match', '(?i).*postgres.*')
+        | sort(attribute='key')
+        | list
+      }}
+
+- name: "Build PostgreSQL derived facts"
+  ansible.builtin.set_fact:
+    postgresql_package_names: "{{ postgresql_packages | map(attribute='key') | list }}"
+    postgresql_package_details: "{{ postgresql_packages | map(attribute='value') | flatten | list }}"
+    postgresql_service_names: "{{ postgresql_services | map(attribute='key') | list }}"
+    postgresql_running_services: >-
+      {{
+        postgresql_services
+        | selectattr('value.state', 'equalto', 'running')
+        | map(attribute='key')
+        | list
+      }}
+    postgresql_major_versions: >-
+      {{
+        postgresql_packages
+        | map(attribute='key')
+        | map('regex_findall', 'postgresql([0-9]+)')
+        | flatten
+        | unique
+        | sort
+        | list
+      }}
+
+- name: "Build PostgreSQL installation directory candidates"
+  ansible.builtin.set_fact:
+    postgresql_install_dir_candidates: >-
+      {{
+        ['/var/lib/pgsql', '/var/lib/pgsql/data']
+        + (postgresql_major_versions | map('regex_replace', '^(.+)$', '/var/lib/pgsql/\\1') | list)
+        + (postgresql_major_versions | map('regex_replace', '^(.+)$', '/var/lib/pgsql/\\1/data') | list)
+        + (postgresql_major_versions | map('regex_replace', '^(.+)$', '/usr/pgsql-\\1') | list)
+      }}
+
+- name: "Check PostgreSQL installation directory candidates"
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop: "{{ postgresql_install_dir_candidates }}"
+  register: postgresql_install_dir_stats
   changed_when: false
-  failed_when: false
 
-- name: "Check PostgreSQL installation directory"
-  shell: |
-    rpm -ql postgresql14-server 2>/dev/null | grep -E "^/var/lib/pgsql|^/usr/pgsql" | head -1 || \
-    rpm -ql postgresql13-server 2>/dev/null | grep -E "^/var/lib/pgsql|^/usr/pgsql" | head -1 || \
-    rpm -ql postgresql12-server 2>/dev/null | grep -E "^/var/lib/pgsql|^/usr/pgsql" | head -1 || \
-    echo "Not found"
-  register: postgresql_install_dir
-  changed_when: false
-  failed_when: false
-
-- name: "Check PostgreSQL processes"
-  shell: |
-    ps aux | grep -iE "postgres" | grep -v grep || echo "No PostgreSQL process found"
-  register: postgresql_process
-  changed_when: false
-  failed_when: false
-
-- name: "Check PostgreSQL running status"
-  shell: |
-    systemctl is-active postgresql-14 2>/dev/null || \
-    systemctl is-active postgresql-13 2>/dev/null || \
-    systemctl is-active postgresql-12 2>/dev/null || \
-    systemctl is-active postgresql 2>/dev/null || \
-    echo "Not running"
-  register: postgresql_running
-  changed_when: false
-  failed_when: false
-
-- name: "Check PostgreSQL systemd service"
-  shell: |
-    systemctl list-units --type=service --all 2>/dev/null | grep -iE "postgres" || echo "No PostgreSQL service found"
-  register: postgresql_systemd
-  changed_when: false
-  failed_when: false
-
-- name: "Check PostgreSQL version"
-  shell: |
-    psql --version 2>/dev/null || echo "Not found"
-  register: postgresql_version
-  changed_when: false
-  failed_when: false
-
-- name: "Set PostgreSQL found flag"
-  set_fact:
-    postgresql_found: "{{ (postgresql_rpm.stdout | length > 0) or (postgresql_process.stdout | length > 0) or (postgresql_systemd.stdout | length > 0) }}"
-    postgresql_is_running: "{{ postgresql_running.stdout != 'Not running' }}"
+- name: "Set PostgreSQL final facts"
+  ansible.builtin.set_fact:
+    postgresql_found: "{{ (postgresql_package_names | length > 0) or (postgresql_service_names | length > 0) }}"
+    postgresql_is_running: "{{ postgresql_running_services | length > 0 }}"
+    postgresql_install_dir: >-
+      {{
+        (
+          postgresql_install_dir_stats.results
+          | selectattr('stat.exists')
+          | selectattr('stat.isdir')
+          | map(attribute='item')
+          | first
+        )
+        | default('Not found', true)
+      }}
+    postgresql_versions: "{{ postgresql_package_details | map(attribute='version') | unique | list }}"
 
 - name: "Display PostgreSQL results"
-  debug:
+  ansible.builtin.debug:
     msg: |
       ================================================
       PostgreSQL Discovery for {{ inventory_hostname }}
       ================================================
       Installed: {{ postgresql_found }}
-      Installation Directory: {{ postgresql_install_dir.stdout }}
+      Installation Directory: {{ postgresql_install_dir }}
       Running: {{ postgresql_is_running }}
-      Version: {{ postgresql_version.stdout }}
-      RPM Packages: {{ postgresql_rpm.stdout_lines[:3] }}
+      Running Services: {{ postgresql_running_services }}
+      Versions: {{ postgresql_versions | default([]) }}
+      RPM Packages: {{ postgresql_package_names[:3] }}
+      Services: {{ postgresql_service_names }}
       ================================================
